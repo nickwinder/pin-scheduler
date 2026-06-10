@@ -36,7 +36,6 @@ cp config.example.yaml config.yaml   # then edit: link, alt_text, tags, board, w
 mkdir -p videos/inbox videos/scheduled
 ```
 
-`alt_text` is reserved for a future playbook step; the current playbook does not fill it (the ALT field lives under Pinterest's "More options" section, unmapped).
 
 - Chrome must be running and logged into the target Pinterest account.
 - `browser-harness` must be on $PATH (the daemon auto-starts).
@@ -165,23 +164,35 @@ is long). Screenshot-verify the dropdown button now shows the board name.
 
 **6. Tags** — one at a time, from `config.yaml`:
 
-- Click `#combobox-storyboard-interest-tags`, `Input.insertText` the tag.
-- Wait ~2 s for the autocomplete, screenshot.
-- Click the closest suggestion (coords via `getBoundingClientRect` on the
-  suggestion element).
+- Click `#combobox-storyboard-interest-tags`; if it holds leftover text,
+  select-all first (`Input.dispatchKeyEvent` keyDown `a` with
+  `commands=["selectAll"]`), then `Input.insertText` the tag.
+- Wait ~2 s. Suggestions are **`[role=option]` elements** (they contain
+  child spans — do NOT filter for leaf divs; that finds nothing):
+  ```python
+  js("JSON.stringify([...document.querySelectorAll(\"[role=option]\")].map(e => e.textContent.trim()))")
+  ```
+- Pinterest's vocabulary rarely matches config tags verbatim — pick the
+  closest option (e.g. config "barefoot running" → "Trail Running",
+  "running shoes" → "Running Shoes"). Click it via `getBoundingClientRect`
+  on the matching `[role=option]` element.
 - Verify the "Tagged topics (N)" counter incremented:
   ```python
   js("(document.body.innerText.match(/Tagged topics \\((\\d+)\\)/) || [])[1]")
   ```
-- **No matching suggestion → skip the tag** (Pinterest only accepts its own
-  vocabulary; unconfirmed tags silently drop) and note it in the final
-  report. A skipped tag is not a batch failure.
+- **Empty options list → skip the tag** and note it in the final report. A
+  skipped tag is not a batch failure.
 
-**7. Schedule toggle.** Click `#pin-draft-switch-group` ("Publish at a later
+**7. ALT text.** Click the "More options" expander (bottom of the form),
+then fill `#storyboardAltText` ("Describe your Pin's visual details") with
+`alt_text` from config — same click + `Input.insertText` + readback pattern
+as step 4. ("More options" also holds comment/product toggles — leave them.)
+
+**8. Schedule toggle.** Click `#pin-draft-switch-group` ("Publish at a later
 date"), verify `checked` is true via `js()`. The red Publish button now reads
 **Schedule** — that is the button you must NOT click.
 
-**8. Date field** (`input[id^=pin-draft-schedule-date-field]`):
+**9. Date field** (`input[id^=pin-draft-schedule-date-field]`):
 
 ```bash
 browser-harness -c '
@@ -202,7 +213,7 @@ Scheduling window is 30 days out, max — slots.py never exceeds that in
 normal use, but a stale manifest could; a disabled calendar date means the
 slot is out of range.
 
-**9. Time field** (`input[id^=pin-draft-schedule-time-field]`): typing is
+**10. Time field** (`input[id^=pin-draft-schedule-time-field]`): typing is
 ignored — **must pick from the dropdown** (48 options, 30-minute increments,
 12-hour labels). The dropdown scrolls in an inner container, so use
 `scrollIntoView` on the option, not window scrolling.
@@ -225,7 +236,7 @@ print(js(q + ".value"))                                  # must equal SLOT_LABEL
 '
 ```
 
-**10. Final verification, then STOP.** Take a full screenshot and confirm:
+**11. Final verification, then STOP.** Take a full screenshot and confirm:
 title, description, link, board, tags, toggle on, date, and time all show
 the expected values; the header shows **"Changes stored!"**; the left rail
 shows the draft under **"Pin drafts (N)"**. Do **not** click
@@ -278,9 +289,10 @@ worked because the call returned.
 | Description | `div[contenteditable=true]` | click + `Input.insertText` | Draft.js editor; verify via `textContent`; enforce ≤800 |
 | Link | `#WebsiteField` | click + `Input.insertText` | `type=url` |
 | Board | "Choose a board" dropdown | click → board list (has search box) → click board name | shows "All boards" + Create board |
-| Tags | `#combobox-storyboard-interest-tags` | click + `insertText` → wait ~2 s → click suggestion | counter "Tagged topics (N)"; chip with × appears |
+| Tags | `#combobox-storyboard-interest-tags` | click + `insertText` → wait ~2 s → click `[role=option]` | suggestions are `[role=option]` (not leaf divs); counter "Tagged topics (N)"; chip with × appears |
 | Schedule toggle | `#pin-draft-switch-group` (checkbox) | click | label "Publish at a later date"; Publish button becomes "Schedule" |
 | Schedule date | `input[id^=pin-draft-schedule-date-field]` | click → select-all (keyDown `a` + `commands=["selectAll"]`) → `insertText` MM/DD/YYYY → Escape | calendar popup; 30-day window |
 | Schedule time | `input[id^=pin-draft-schedule-time-field]` | click → pick from dropdown (typing ignored) | 48 options, 30-min increments, 12-hour labels |
 | AI disclosure | `input[id^=pin-draft-ai-disclosure]` | click if needed | "Mark as AI-Modified" |
-| ALT text | not in the organic main form | — | lives under "More options" (bottom); unverified in this flow — not part of the playbook |
+| ALT text | `#storyboardAltText` | expand "More options" → click + `Input.insertText` | placeholder "Describe your Pin's visual details"; verified working |
+| Comments / products toggles | `#CommentSwitch`, `#stelaSwitch` | leave untouched | under "More options" |

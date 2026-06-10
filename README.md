@@ -58,7 +58,6 @@ cp config.example.yaml config.yaml   # edit: link, alt text, tags, board, postin
 mkdir -p videos/inbox videos/scheduled
 ```
 
-`alt_text` is reserved for a future playbook step; the current playbook does not fill it (the ALT field lives under Pinterest's "More options" section, unmapped).
 
 Drop `.mp4` files (< 200 MB — the organic composer's limit) into
 `videos/inbox/`, open Claude Code in the repo, and say "prep pins".

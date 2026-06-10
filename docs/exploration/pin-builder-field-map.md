@@ -41,12 +41,12 @@ All automation targets **pin-creation-tool**. Differences that matter:
 | Description | `div[contenteditable=true]` | click + `Input.insertText` | Draft.js editor; value verified via `textContent` |
 | Link | `#WebsiteField` | click + `Input.insertText` | `type=url` |
 | Board | "Choose a board" dropdown | click → search box + board list → click board name | shows "All boards" + Create board |
-| Tags | `#combobox-storyboard-interest-tags` | click + `Input.insertText` → wait ~2 s → click suggestion | counter "Tagged topics (N)"; chip with × appears; "people won't see your tags" |
+| Tags | `#combobox-storyboard-interest-tags` | click + `Input.insertText` → wait ~2 s → click `[role=option]` | suggestions are `[role=option]` elements with child spans (leaf-div filters find nothing); vocabulary is Pinterest's own — pick closest match; counter "Tagged topics (N)"; chip with × appears |
 | Schedule toggle | `#pin-draft-switch-group` (checkbox) | click | label "Publish at a later date" |
 | Schedule date | `input[id^=pin-draft-schedule-date-field]` | click → select-all (CDP keyDown 'a' + `commands:["selectAll"]`) → `insertText` "MM/DD/YYYY" | calendar popup opens; typed value accepted; Escape closes |
 | Schedule time | `input[id^=pin-draft-schedule-time-field]` | click → **must pick from dropdown** (typing ignored): scrollIntoView the option div matching e.g. "09:00 AM", click it | 48 options, **30-minute increments**, 12-hour labels |
 | AI disclosure | `input[id^=pin-draft-ai-disclosure]` | click if needed | "Mark as AI-Modified" + "AI-generated person" checkbox |
-| ALT text | not seen in organic flow main form | — | lives under "More options" section (bottom); ad flow had `textarea[id^=pin-draft-alttext]` after an "Add alt text" button |
+| ALT text | `#storyboardAltText` | expand "More options" → click + `Input.insertText` | placeholder "Describe your Pin's visual details"; verified in dry-run 2026-06-11. "More options" also holds `#CommentSwitch` and `#stelaSwitch` toggles |
 
 No character counters surfaced; enforce title ≤100 / description ≤800 in the
 generator rather than relying on the UI.
