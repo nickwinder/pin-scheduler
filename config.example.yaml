@@ -1,0 +1,13 @@
+# Copy to config.yaml and fill in your values. config.yaml is gitignored.
+link: https://www.example.com          # destination URL for every pin
+alt_text: "Describe what is visible in the video"
+tags:                                  # tagged topics, same for every pin
+  - barefoot running
+  - minimalist shoes
+board: "My Board"
+window:
+  start: "08:00"                       # local time, first slot of the day
+  end: "20:00"                         # last slot of the day (inclusive)
+interval_minutes: 60                   # spacing between pins (30 or 60)
+margin_minutes: 20                     # never schedule closer than this to now
+queue_cap: 10                          # Pinterest max queued pins (see field map doc)

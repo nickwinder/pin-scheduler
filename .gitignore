@@ -1,2 +1,8 @@
 .DS_Store
 .idea/
+.cache/
+.venv/
+__pycache__/
+videos/
+config.yaml
+manifest.csv
