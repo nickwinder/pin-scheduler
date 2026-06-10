@@ -10,4 +10,5 @@ window:
   end: "20:00"                         # last slot of the day (inclusive)
 interval_minutes: 60                   # spacing between pins (30 or 60)
 margin_minutes: 20                     # never schedule closer than this to now
-queue_cap: 10                          # Pinterest max queued pins (see field map doc)
+queue_cap: 10                          # Pinterest max queued pins — help-docs value, not yet verified empirically
+auto_schedule: false                   # true = click Schedule after filling (requires explicit in-session consent); false = leave as draft, you click Schedule in Pinterest
