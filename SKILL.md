@@ -36,6 +36,8 @@ cp config.example.yaml config.yaml   # then edit: link, alt_text, tags, board, w
 mkdir -p videos/inbox videos/scheduled
 ```
 
+`alt_text` is reserved for a future playbook step; the current playbook does not fill it (the ALT field lives under Pinterest's "More options" section, unmapped).
+
 - Chrome must be running and logged into the target Pinterest account.
 - `browser-harness` must be on $PATH (the daemon auto-starts).
 - `uv` and `ffmpeg` installed (whisper transcription needs ffmpeg).
@@ -53,14 +55,16 @@ mkdir -p videos/inbox videos/scheduled
        hashtag spam.
      - Enforce the limits yourself — the UI has no counters.
    - Append: `uv run python scripts/manifest.py add "<file>" "<title>" "<description>"`
-3. Tell the user to review `manifest.csv` and approve rows. If they say
-   "approve all", mark every `draft` row:
-   `uv run python scripts/manifest.py mark "<file>" approved`
+3. Tell the user to review `manifest.csv` and approve rows. On "approve all":
+   for **each** row with status `draft`, run one invocation per row —
+   `uv run python scripts/manifest.py mark "<filename>" approved` — there is
+   no bulk subcommand.
 
 ## Post phase ("schedule pins")
 
-1. Capacity check: `uv run python scripts/manifest.py capacity` (10 minus
-   future `scheduled` rows). If 0: stop cleanly, report "queue full, N
+1. Capacity check: read `queue_cap` from `config.yaml`, then run
+   `uv run python scripts/manifest.py capacity --cap <queue_cap>` (substitute
+   the value; default is 10). If 0: stop cleanly, report "queue full, N
    approved pins remaining — run again later".
 2. Take `N = min(capacity, number of approved rows)`.
 3. Get slots: `uv run python scripts/slots.py --count N` — prints one naive

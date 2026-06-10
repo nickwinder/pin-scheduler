@@ -64,3 +64,16 @@ def test_capacity_counts_only_future_scheduled():
         {"status": "draft", "scheduled_time": ""},
     ]
     assert remaining_capacity(rows, now=now, cap=10) == 9
+
+
+def test_capacity_cli_respects_cap_flag(tmp_path):
+    import subprocess
+    import sys
+    path = tmp_path / "manifest.csv"
+    append_row(path, "a.mp4", "T", "D")
+    mark(path, "a.mp4", "scheduled", scheduled_time="2099-01-01T09:00")
+    out = subprocess.run(
+        [sys.executable, "scripts/manifest.py", "--manifest", str(path), "capacity", "--cap", "5"],
+        capture_output=True, text=True, check=True,
+    )
+    assert out.stdout.strip() == "4"

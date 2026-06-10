@@ -1,7 +1,9 @@
 # pin-scheduler
 
-Prep and schedule 15–20 Pinterest video pins a day without filling a single
-form field by hand.
+Prep and schedule Pinterest video pins a day without filling a single
+form field by hand. The default `interval_minutes: 60` posting window yields
+13 slots/day; to reach 15–20 pins/day set `interval_minutes: 30` in
+`config.yaml`.
 
 Drop videos into a folder, say "prep pins", review a CSV of generated titles
 and descriptions, say "schedule pins" — and Claude drives your own logged-in
@@ -56,13 +58,15 @@ cp config.example.yaml config.yaml   # edit: link, alt text, tags, board, postin
 mkdir -p videos/inbox videos/scheduled
 ```
 
+`alt_text` is reserved for a future playbook step; the current playbook does not fill it (the ALT field lives under Pinterest's "More options" section, unmapped).
+
 Drop `.mp4` files (< 200 MB — the organic composer's limit) into
 `videos/inbox/`, open Claude Code in the repo, and say "prep pins".
 
 ## A note on Pinterest policy
 
 This automates *your own hands* on *your own account* at human scale —
-15–20 pins a day is normal power-user pinning, the batch session is
+up to 15–20 pins a day is normal power-user pinning, the batch session is
 human-paced, and Pinterest's own scheduler performs the actual timed
 publishing. No engagement automation, no scraping, no third-party accounts.
 

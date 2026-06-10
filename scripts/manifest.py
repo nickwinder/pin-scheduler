@@ -76,7 +76,8 @@ def main():
     p_mark.add_argument("status", choices=STATUSES)
     p_mark.add_argument("--time", default="")
     p_mark.add_argument("--error", default="")
-    sub.add_parser("capacity")
+    p_cap = sub.add_parser("capacity")
+    p_cap.add_argument("--cap", type=int, default=QUEUE_CAP)
     args = parser.parse_args()
 
     if args.cmd == "add":
@@ -84,7 +85,7 @@ def main():
     elif args.cmd == "mark":
         mark(args.manifest, args.filename, args.status, args.time, args.error)
     elif args.cmd == "capacity":
-        print(remaining_capacity(read_rows(args.manifest), now=datetime.now()))
+        print(remaining_capacity(read_rows(args.manifest), now=datetime.now(), cap=args.cap))
 
 
 if __name__ == "__main__":
