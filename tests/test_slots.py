@@ -1,7 +1,8 @@
 # tests/test_slots.py
+import pytest
 from datetime import datetime, time, timedelta
 
-from slots import next_slots
+from slots import next_slots, taken_from_rows
 
 WINDOW = dict(
     window_start=time(8, 0),
@@ -47,3 +48,35 @@ def test_thirty_minute_interval():
         datetime(2026, 6, 12, 8, 30),
         datetime(2026, 6, 12, 9, 0),
     ]
+
+
+def test_inverted_window_raises():
+    with pytest.raises(ValueError):
+        next_slots(
+            window_start=time(20, 0), window_end=time(8, 0),
+            interval=timedelta(minutes=60), taken=set(),
+            now=datetime(2026, 6, 12, 7, 0), count=1,
+        )
+
+
+def test_nonpositive_interval_raises():
+    with pytest.raises(ValueError):
+        next_slots(
+            window_start=time(8, 0), window_end=time(20, 0),
+            interval=timedelta(0), taken=set(),
+            now=datetime(2026, 6, 12, 7, 0), count=1,
+        )
+
+
+def test_taken_from_rows_rejects_aware_datetimes():
+    rows = [{"status": "scheduled", "scheduled_time": "2026-06-12T09:00+12:00"}]
+    with pytest.raises(ValueError):
+        taken_from_rows(rows)
+
+
+def test_taken_from_rows_collects_scheduled():
+    rows = [
+        {"status": "scheduled", "scheduled_time": "2026-06-12T09:00"},
+        {"status": "approved", "scheduled_time": ""},
+    ]
+    assert taken_from_rows(rows) == {datetime(2026, 6, 12, 9, 0)}

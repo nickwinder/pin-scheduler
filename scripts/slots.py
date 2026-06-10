@@ -14,6 +14,10 @@ from manifest import read_rows
 
 def next_slots(*, window_start, window_end, interval, taken, now, count,
                margin=timedelta(minutes=20)):
+    if window_start >= window_end:
+        raise ValueError("window_start must be before window_end")
+    if interval <= timedelta(0):
+        raise ValueError("interval must be positive")
     earliest = now + margin
     slots = []
     day = now.date()
@@ -28,6 +32,17 @@ def next_slots(*, window_start, window_end, interval, taken, now, count,
     return slots
 
 
+def taken_from_rows(rows):
+    taken = set()
+    for r in rows:
+        if r["status"] == "scheduled" and r["scheduled_time"]:
+            dt = datetime.fromisoformat(r["scheduled_time"])
+            if dt.tzinfo is not None:
+                raise ValueError(f"scheduled_time must be naive local time: {r['scheduled_time']}")
+            taken.add(dt)
+    return taken
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--count", type=int, required=True)
@@ -37,11 +52,7 @@ def main():
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
-    taken = {
-        datetime.fromisoformat(r["scheduled_time"])
-        for r in read_rows(args.manifest)
-        if r["status"] == "scheduled" and r["scheduled_time"]
-    }
+    taken = taken_from_rows(read_rows(args.manifest))
     slots = next_slots(
         window_start=time.fromisoformat(cfg["window"]["start"]),
         window_end=time.fromisoformat(cfg["window"]["end"]),
