@@ -35,7 +35,24 @@ def test_mark_unknown_filename_raises(tmp_path):
     path = tmp_path / "manifest.csv"
     append_row(path, "a.mp4", "T", "D")
     with pytest.raises(KeyError):
-        mark(path, "missing.mp4", "scheduled")
+        mark(path, "missing.mp4", "scheduled", scheduled_time="2026-06-12T09:00")
+
+
+def test_mark_scheduled_requires_time(tmp_path):
+    path = tmp_path / "manifest.csv"
+    append_row(path, "a.mp4", "T", "D")
+    with pytest.raises(ValueError):
+        mark(path, "a.mp4", "scheduled")
+
+
+def test_mark_writes_full_row(tmp_path):
+    path = tmp_path / "manifest.csv"
+    append_row(path, "a.mp4", "T", "D")
+    mark(path, "a.mp4", "failed", error="upload timed out")
+    rows = read_rows(path)
+    assert rows[0]["status"] == "failed"
+    assert rows[0]["error"] == "upload timed out"
+    assert rows[0]["scheduled_time"] == ""
 
 
 def test_capacity_counts_only_future_scheduled():

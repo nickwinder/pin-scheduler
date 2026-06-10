@@ -40,6 +40,8 @@ def append_row(path, filename, title, description):
 
 
 def mark(path, filename, status, scheduled_time="", error=""):
+    if status == "scheduled" and not scheduled_time:
+        raise ValueError("scheduled requires scheduled_time")
     rows = read_rows(path)
     for row in rows:
         if row["filename"] == filename:
