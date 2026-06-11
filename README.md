@@ -3,29 +3,32 @@
 A Claude Code plugin that batch-prepares Pinterest video pins so you never
 fill the pin form by hand again. Drop videos into a folder, say **"prep
 pins"**, review a CSV of generated titles and descriptions, say **"schedule
-pins"** — and Claude drives your own logged-in Chrome through Pinterest's
-organic composer (`pinterest.com/pin-creation-tool/`): uploads each video,
-fills title, description, link, ALT text, board, and tags, and sets "Publish
-at a later date" to the next free slot in your posting window.
+pins"** — and Claude drives a dedicated logged-in browser (via
+[agent-browser](https://agent-browser.dev)) through Pinterest's organic
+composer (`pinterest.com/pin-creation-tool/`): uploads each video, fills
+title, description, link, ALT text, board, and tags, and sets "Publish at a
+later date" to the next free slot in your posting window.
 
 **It never publishes anything.** Every pin stops as a fully-prepared draft;
 you review and click **Schedule** in Pinterest yourself. Pinterest's native
 scheduler then does the timed publishing — no machine needs to stay awake.
 
-## Requirements
+## Quickstart
 
-- macOS (the fallback upload path and the transcription smoke test are
-  macOS-specific; the core playbook is plain CDP)
-- Chrome, running and logged into your Pinterest account
-- [Claude Code](https://claude.com/claude-code) with a CDP browser harness —
-  any tool that lets the agent click, type, screenshot, and set file inputs
-  in your real running Chrome (the playbook assumes those four primitives
-  plus raw CDP access)
+### 1. Install the prerequisites (one time)
+
+- [Claude Code](https://claude.com/claude-code)
+- [Node.js](https://nodejs.org), then [agent-browser](https://agent-browser.dev):
+  `npm i -g agent-browser`
 - [uv](https://docs.astral.sh/uv/) — the Python scripts and whisper run
   through it, nothing to pip-install
 - ffmpeg (`brew install ffmpeg`) — whisper needs it for audio extraction
 
-## Install
+That's everything: agent-browser downloads its own browser on first use, and
+uv fetches Python and whisper on demand (the first "prep pins" run spends an
+extra minute downloading the whisper model).
+
+### 2. Install the plugin
 
 ```
 /plugin marketplace add nickwinder/pin-scheduler
@@ -35,7 +38,7 @@ scheduler then does the timed publishing — no machine needs to stay awake.
 (Or from a local checkout: `/plugin marketplace add /path/to/pin-scheduler`,
 then install the same way.)
 
-## Set up your content directory (once)
+### 3. Set up your content directory (one time)
 
 The plugin keeps all state in whatever directory you run Claude Code from —
 your "content directory". Pick or create one, then in Claude Code just say:
@@ -62,6 +65,37 @@ queue_cap: 10                        # Pinterest's queued-pin cap (help-docs val
 auto_schedule: false                 # keep false: drafts only, you click Schedule
 ```
 
+### 4. Log into Pinterest (one time)
+
+The first time you say "schedule pins", agent-browser opens a visible
+dedicated browser window, hits Pinterest's login wall, and Claude stops and
+asks you to log in. Type your credentials into that window yourself — the
+automation never touches them. The persistent profile at
+`~/.pin-scheduler-browser` keeps the session for every future run.
+
+(Pinterest may ask for a verification email or captcha the first time it
+sees the new browser — that's expected, and you're at the keyboard for this
+step anyway.)
+
+Why a dedicated browser instead of your everyday Chrome: macOS Chrome 144+
+gates every automation client behind an "Allow remote debugging?" consent
+popup, and when that gate is pending, agent-browser silently falls back to a
+fresh logged-out browser — a failure mode you don't want mid-batch. A
+persistent dedicated profile is deterministic; the skill verifies the login
+state with a screenshot before every batch either way.
+
+### 5. Use it
+
+Drop videos in, "prep pins", approve, "schedule pins", then click
+**Schedule** on the drafts in Pinterest — see [Daily use](#daily-use).
+
+Good to know:
+
+- Developed and tested on macOS; agent-browser, uv, whisper, and ffmpeg are
+  all cross-platform, but no one has run this on Linux or Windows yet.
+- Claude Code will ask permission for `agent-browser` and `uv` commands
+  until you allow them for the project.
+
 ## Daily use
 
 1. **Drop videos** (`.mp4`, < 200 MB each — the composer's limit) into
@@ -80,7 +114,9 @@ auto_schedule: false                 # keep false: drafts only, you click Schedu
    action is confirmed by a screenshot or DOM readback before the next one.
    Each finished pin is marked `scheduled` in the CSV and its video moves to
    `videos/scheduled/`. If it hits a login wall or anything unexpected, it
-   stops and tells you rather than guessing.
+   stops and tells you rather than guessing. (First run only: log into
+   Pinterest in the agent-browser window when asked — the profile remembers
+   it from then on.)
 
 5. **Open Pinterest and click Schedule** on each draft in the "Pin drafts"
    rail. That's the one step the automation never does for you. Drafts
@@ -112,8 +148,12 @@ schedule and the review hurdle is real — make your own call.
 
 ## Troubleshooting
 
-- **"Login wall" stop** — log into Pinterest in Chrome, then tell Claude to
-  continue.
+- **"Login wall" stop** — log into Pinterest in the agent-browser window
+  (the headed browser it opened), then tell Claude to continue. The
+  persistent profile keeps the session afterwards.
+- **agent-browser commands time out with `os error 35`** — the daemon is
+  wedged; run `pkill -f agent-browser-darwin`, delete
+  `~/.agent-browser/default.{sock,pid,stream}`, and retry.
 - **A row is marked `failed`** — fix the cause (the `error` column says
   why; a screenshot is in `.cache/failures/`), edit its status back to
   `approved`, and run "schedule pins" again. `scheduled` rows are never

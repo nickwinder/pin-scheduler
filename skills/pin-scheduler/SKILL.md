@@ -5,10 +5,10 @@ description: Prep and schedule Pinterest video pins via the organic pin-creation
 
 # pin-scheduler
 
-Batch-prepare Pinterest video pins in the user's logged-in Chrome via
-browser-harness. Two phases: **prep** (transcribe + generate copy into
-`manifest.csv` for review) and **post** (fill the pin form, set the schedule,
-leave it as a draft). Pinterest's own scheduler does the timed publishing.
+Batch-prepare Pinterest video pins in a dedicated agent-browser session. Two
+phases: **prep** (transcribe + generate copy into `manifest.csv` for review)
+and **post** (fill the pin form, set the schedule, leave it as a draft).
+Pinterest's own scheduler does the timed publishing.
 
 ## Paths
 
@@ -18,6 +18,8 @@ leave it as a draft). Pinterest's own scheduler does the timed publishing.
 - **State lives in the user's content directory** (the current working
   directory): `config.yaml`, `manifest.csv`, `videos/inbox/`,
   `videos/scheduled/`, `.cache/`. Run all commands from there.
+- **The browser profile** lives at `~/.pin-scheduler-browser` (machine-level,
+  shared across content directories).
 
 `manifest.csv` is the single source of truth; never schedule anything that
 isn't an `approved` row in it.
@@ -47,10 +49,43 @@ cp "${CLAUDE_PLUGIN_ROOT}/config.example.yaml" config.yaml   # then edit: link, 
 mkdir -p videos/inbox videos/scheduled
 ```
 
-
-- Chrome must be running and logged into the target Pinterest account.
-- `browser-harness` must be on $PATH (the daemon auto-starts).
+- `agent-browser` must be on $PATH (`npm i -g agent-browser`; the daemon
+  auto-starts).
 - `uv` and `ffmpeg` installed (whisper transcription needs ffmpeg).
+- First post run only: the dedicated browser needs a one-time Pinterest
+  login (see "Browser session" below).
+
+## Browser session (agent-browser)
+
+The post phase drives a **dedicated headed browser with a persistent
+profile** — not the user's everyday Chrome:
+
+```bash
+agent-browser --profile ~/.pin-scheduler-browser --headed open "https://www.pinterest.com/pin-creation-tool/"
+agent-browser wait --load networkidle
+agent-browser get url        # must still be .../pin-creation-tool/
+agent-browser screenshot /tmp/pin-check.png
+```
+
+- **Logged in** → the screenshot shows the Create Pin editor with the upload
+  dropzone. Proceed.
+- **Logged out** → Pinterest redirects to its home/landing page (URL loses
+  `/pin-creation-tool/`, screenshot shows Log in / Sign up). **STOP and ask
+  the user to log into Pinterest in the agent-browser window** — never type
+  credentials yourself. The persistent profile keeps the session for every
+  later run, so this happens once.
+
+Why not attach to the user's running Chrome: macOS Chrome 144+ gates every
+new CDP client behind an in-browser "Allow remote debugging?" consent popup.
+While that popup is pending, the agent-browser daemon wedges, its CLI times
+out — and then **commands silently fall back to a freshly auto-launched,
+logged-out browser**, which looks like a working session but isn't. Chrome
+profile *snapshots* (`--profile <name>`) don't carry logins on macOS either:
+cookies are keychain-encrypted and Chrome for Testing can't decrypt them.
+The dedicated persistent profile avoids all of it. (`agent-browser connect
+<ws-url>` to the real Chrome does work if the user clicks Allow — treat it
+as an advanced option, and never trust a "connected" session until a
+screenshot proves the login state.)
 
 ## Prep phase ("prep pins")
 
@@ -87,8 +122,9 @@ mkdir -p videos/inbox videos/scheduled
    ```
    `mark <file> scheduled` **requires** `--time` (it raises without it). Pass
    the slot exactly as slots.py printed it — naive local ISO, no timezone.
-5. **Pacing:** a few seconds between actions, 30–60 s between pins. The page
-   has a hidden reCAPTCHA — human-paced batch sessions only.
+5. **Pacing:** a few seconds between actions (`agent-browser wait 2000`
+   inside batches), 30–60 s between pins. The page has a hidden reCAPTCHA —
+   human-paced batch sessions only.
 6. Report: which pins were prepared with which slots, any skipped tags, and
    remind the user to click **Schedule** on each draft in the Pin drafts rail
    (drafts expire in 30 days).
@@ -103,170 +139,173 @@ Slot conversion first: from the ISO slot, date is `MM/DD/YYYY`
 **1. Open the organic composer.** The target is
 `https://www.pinterest.com/pin-creation-tool/`. Never use `/pin-builder/` —
 on business accounts that is the **ad** composer (different limits, unstable
-ids, `setFileInputFiles` silently ignored).
+ids, file-input uploads silently ignored).
 
 ```bash
-browser-harness -c '
-new_tab("https://www.pinterest.com/pin-creation-tool/")
-wait_for_load()
-capture_screenshot()
-'
+agent-browser --profile ~/.pin-scheduler-browser --headed open "https://www.pinterest.com/pin-creation-tool/"
+agent-browser wait --load networkidle
+agent-browser get url
+agent-browser screenshot /tmp/pin-step1.png
 ```
 
-Verify the screenshot shows the editor with the upload dropzone. If it shows
-a login wall: **STOP the batch and ask the user** — never type credentials.
+The URL must still end in `/pin-creation-tool/` and the screenshot must show
+the editor with the upload dropzone. A redirect to the home page = login
+wall: **STOP the batch and ask the user** (see "Browser session").
 
-**2. Upload via CDP** (objectId variant on `#storyboard-upload-input`).
-This is the proven primary; no native picker needed.
+**2. Upload.** `agent-browser upload` handles the hidden input directly:
 
 ```bash
-browser-harness -c '
-r = cdp("Runtime.evaluate", expression="document.querySelector(\"#storyboard-upload-input\")")
-cdp("DOM.setFileInputFiles",
-    files=["/absolute/path/to/videos/inbox/FILE.mp4"],
-    objectId=r["result"]["objectId"])
-print(js("document.querySelector(\"#storyboard-upload-input\") === null"))
-'
+agent-browser upload "#storyboard-upload-input" "/absolute/path/to/videos/inbox/FILE.mp4"
+agent-browser wait 3000
+agent-browser eval "document.querySelector('#storyboard-upload-input') === null"
 ```
 
-The input being **removed from the DOM** (`True` above) = upload started.
-Video must be mp4 < 200 MB in this flow. Fallback only if CDP fails: click
-the dropzone, then drive the native macOS picker via AppleScript (activate,
-delay 2, Cmd+Shift+G, delay 2, type folder path, Return, delay 4, type
-filename, delay 1.5).
+The input being **removed from the DOM** (`true` above) = upload started.
+Video must be mp4 < 200 MB in this flow.
 
-**3. Wait for processing.** Poll `capture_screenshot()` every ~10 s until the
-video preview (with play button) renders. Timeout: **3 minutes** → mark this
-row `failed` with reason "processing timeout" and continue with the next pin
-(the one exception to fail-stop).
-
-**4. Fill the text fields** — coordinate click + `Input.insertText`. No
-clipboard. Coordinates come from `getBoundingClientRect()` via `js()`, never
-from screenshot pixels.
+**3. Wait for processing.**
 
 ```bash
-browser-harness -c '
-import json
+agent-browser wait --fn "!!document.querySelector('video')"
+agent-browser screenshot /tmp/pin-step3.png    # preview with play button
+```
 
-def fill(sel, text):
-    q = "document.querySelector(" + json.dumps(sel) + ")"
-    js(q + ".scrollIntoView({block: \"center\"})")
-    r = json.loads(js("JSON.stringify(" + q + ".getBoundingClientRect())"))
-    click_at_xy(r["x"] + r["width"] / 2, r["y"] + r["height"] / 2)
-    cdp("Input.insertText", text=text)
+Timeout: **3 minutes** → mark this row `failed` with reason "processing
+timeout" and continue with the next pin (the one exception to fail-stop).
 
-fill("#storyboard-selector-title", TITLE)               # from manifest row
-fill("div[contenteditable=true]", DESCRIPTION)          # Draft.js editor
-fill("#WebsiteField", LINK)                             # from config.yaml
+**4. Fill the text fields.** Plain `fill` works on all three — including the
+Draft.js description editor. Readback after each; pace between fields.
+
+```bash
+agent-browser fill "#storyboard-selector-title" "TITLE"          # from manifest row
+agent-browser wait 2000
+agent-browser fill "div[contenteditable=true]" "DESCRIPTION"     # from manifest row
+agent-browser wait 2000
+agent-browser fill "#WebsiteField" "LINK"                        # from config.yaml
 
 # Readback verification — required before moving on:
-print(js("document.querySelector(\"#storyboard-selector-title\").value"))
-print(js("document.querySelector(\"div[contenteditable=true]\").textContent"))
-print(js("document.querySelector(\"#WebsiteField\").value"))
-'
+agent-browser get value "#storyboard-selector-title"
+agent-browser get text "div[contenteditable=true]"
+agent-browser get value "#WebsiteField"
 ```
 
-Each printed value must match what you sent (description verifies via
-`textContent`). Mismatch → failure policy.
+Each printed value must match what you sent. Mismatch → failure policy.
 
-**5. Board.** Click the "Choose a board" dropdown (rect via `js()`), then
-click the configured board name in the list (it has a search box if the list
-is long). Screenshot-verify the dropdown button now shows the board name.
+**5. Board.** The dropdown only opens reliably when it's in view, and a
+click's "✓ Done" does not prove it opened — verify, retry once if needed:
+
+```bash
+agent-browser snapshot -i -c        # find ref of button "Choose a board Open dropdown", e.g. @e24
+agent-browser batch "scrollintoview @e24" "wait 1000" "click @e24" "wait 1200" "screenshot /tmp/pin-step5.png"
+# screenshot must show the board list; if not, click the ref again
+agent-browser find text "BOARD_NAME" click --exact      # board from config.yaml
+agent-browser wait 1500
+agent-browser snapshot -i -c        # dropdown button must now show the board name
+```
 
 **6. Tags** — one at a time, from `config.yaml`:
 
-- Click `#combobox-storyboard-interest-tags`; if it holds leftover text,
-  select-all first (`Input.dispatchKeyEvent` keyDown `a` with
-  `commands=["selectAll"]`), then `Input.insertText` the tag.
-- Wait ~2 s. Suggestions are **`[role=option]` elements** (they contain
-  child spans — do NOT filter for leaf divs; that finds nothing):
-  ```python
-  js("JSON.stringify([...document.querySelectorAll(\"[role=option]\")].map(e => e.textContent.trim()))")
-  ```
+```bash
+agent-browser fill "#combobox-storyboard-interest-tags" "TAG"
+agent-browser wait 2500
+agent-browser eval "JSON.stringify([...document.querySelectorAll('[role=option]')].map(e => e.textContent.trim()))"
+```
+
 - Pinterest's vocabulary rarely matches config tags verbatim — pick the
   closest option (e.g. config "barefoot running" → "Trail Running",
-  "running shoes" → "Running Shoes"). Click it via `getBoundingClientRect`
-  on the matching `[role=option]` element.
-- Verify the "Tagged topics (N)" counter incremented:
-  ```python
-  js("(document.body.innerText.match(/Tagged topics \\((\\d+)\\)/) || [])[1]")
+  "running shoes" → "Running Shoes"). An empty list is common for specific
+  phrases: retry once with a broader query (e.g. "barefoot running" →
+  "running"), then pick the closest suggestion.
+- Click the option and **verify the counter** — option clicks can silently
+  no-op when the option sits outside the dropdown's visible scroll area:
+  ```bash
+  agent-browser find role option click --name "OPTION_TEXT" --exact
+  agent-browser wait 1500
+  agent-browser eval "(document.body.innerText.match(/Tagged topics \((\d+)\)/) || [])[1]"
   ```
-- **Empty options list → skip the tag** and note it in the final report. A
-  skipped tag is not a batch failure.
+  If the counter did not increment, scroll the option into view via `eval`
+  (`...scrollIntoView({block:'center'})` on the matching `[role=option]`)
+  and click again. Still no increment after one retry → failure policy.
+- **No usable suggestions → skip the tag** and note it in the final report.
+  A skipped tag is not a batch failure.
 
-**7. ALT text.** Click the "More options" expander (bottom of the form),
-then fill `#storyboardAltText` ("Describe your Pin's visual details") with
-`alt_text` from config — same click + `Input.insertText` + readback pattern
-as step 4. ("More options" also holds comment/product toggles — leave them.)
-
-**8. Schedule toggle.** Click `#pin-draft-switch-group` ("Publish at a later
-date"), verify `checked` is true via `js()`. The red Publish button now reads
-**Schedule** — that is the button you must NOT click.
-
-**9. Date field** (`input[id^=pin-draft-schedule-date-field]`):
+**7. ALT text.** `#storyboardAltText` is **not in the DOM** until "More
+options" is expanded:
 
 ```bash
-browser-harness -c '
-import json
-q = "document.querySelector(\"input[id^=pin-draft-schedule-date-field]\")"
-js(q + ".scrollIntoView({block: \"center\"})")
-r = json.loads(js("JSON.stringify(" + q + ".getBoundingClientRect())"))
-click_at_xy(r["x"] + r["width"] / 2, r["y"] + r["height"] / 2)
-cdp("Input.dispatchKeyEvent", type="keyDown", key="a", commands=["selectAll"])
-cdp("Input.insertText", text="06/12/2026")              # MM/DD/YYYY from slot
-cdp("Input.dispatchKeyEvent", type="keyDown", key="Escape")  # close calendar
-cdp("Input.dispatchKeyEvent", type="keyUp", key="Escape")
-print(js(q + ".value"))                                  # must equal the date
-'
+agent-browser snapshot -i -c        # find ref of button "More options ..." , e.g. @e17
+agent-browser batch "scrollintoview @e17" "click @e17" "wait 1500"
+agent-browser fill "#storyboardAltText" "ALT_TEXT"               # from config.yaml
+agent-browser get value "#storyboardAltText"
+```
+
+("More options" also holds comment/product toggles — leave them.)
+
+**8. Schedule toggle.**
+
+```bash
+agent-browser check "#pin-draft-switch-group"
+agent-browser wait 1500
+agent-browser is checked "#pin-draft-switch-group"               # must print true
+```
+
+The date/time fields appear and the red Publish button now reads
+**Schedule** — that is the button you must NOT click.
+
+**9. Date field.**
+
+```bash
+agent-browser fill "input[id^=pin-draft-schedule-date-field]" "06/12/2026"   # MM/DD/YYYY from slot
+agent-browser wait 1200
+agent-browser press Escape                                       # close the calendar popup
+agent-browser get value "input[id^=pin-draft-schedule-date-field]"   # must equal the date
 ```
 
 Scheduling window is 30 days out, max — slots.py never exceeds that in
 normal use, but a stale manifest could; a disabled calendar date means the
 slot is out of range.
 
-**10. Time field** (`input[id^=pin-draft-schedule-time-field]`): typing is
-ignored — **must pick from the dropdown** (48 options, 30-minute increments,
-12-hour labels). The dropdown scrolls in an inner container, so use
-`scrollIntoView` on the option, not window scrolling.
+**10. Time field** — typing is ignored; **must pick from the dropdown**
+(48 options, 30-minute increments, 12-hour labels). Playwright auto-scrolls
+the option inside the dropdown's inner container:
 
 ```bash
-browser-harness -c '
-import json
-SLOT_LABEL = "09:00 AM"                                  # %I:%M %p from slot
-q = "document.querySelector(\"input[id^=pin-draft-schedule-time-field]\")"
-js(q + ".scrollIntoView({block: \"center\"})")
-r = json.loads(js("JSON.stringify(" + q + ".getBoundingClientRect())"))
-click_at_xy(r["x"] + r["width"] / 2, r["y"] + r["height"] / 2)   # opens dropdown
-opt = ("[...document.querySelectorAll(\"div\")].find(d => "
-       "d.childElementCount === 0 && d.textContent.trim() === "
-       + json.dumps(SLOT_LABEL) + ")")
-js(opt + ".scrollIntoView({block: \"center\"})")
-r = json.loads(js("JSON.stringify(" + opt + ".getBoundingClientRect())"))
-click_at_xy(r["x"] + r["width"] / 2, r["y"] + r["height"] / 2)
-print(js(q + ".value"))                                  # must equal SLOT_LABEL
-'
+agent-browser click "input[id^=pin-draft-schedule-time-field]"   # opens dropdown
+agent-browser wait 1500
+agent-browser find text "09:00 AM" click --exact                 # %I:%M %p from slot
+agent-browser wait 1200
+agent-browser get value "input[id^=pin-draft-schedule-time-field]"   # must equal the label
 ```
 
-**11. Final verification, then STOP.** Take a full screenshot and confirm:
-title, description, link, board, tags, toggle on, date, and time all show
-the expected values; the header shows **"Changes stored!"**; the left rail
-shows the draft under **"Pin drafts (N)"**. Do **not** click
-Publish/Schedule (see drafts-only policy). Then update the manifest and move
-the file (post phase step 4), wait 30–60 s, and start the next pin with
-"Create new" or a fresh `new_tab`.
+**11. Final verification, then STOP.**
+
+```bash
+agent-browser eval "document.body.innerText.includes('Changes stored!')"     # true
+agent-browser eval "(document.body.innerText.match(/Pin drafts \((\d+)\)/) || [])[1]"
+agent-browser snapshot -i -c     # button "Schedule" present; toggle checked=true; fields hold values
+agent-browser screenshot /tmp/pin-step11.png
+```
+
+Confirm: title, description, link, board, tags, toggle on, date, and time
+all show the expected values; the header shows **"Changes stored!"**; the
+drafts count incremented. Do **not** click Publish/Schedule (see drafts-only
+policy). Then update the manifest and move the file (post phase step 4),
+wait 30–60 s, and start the next pin with the "Create new" button or a fresh
+`open`.
 
 ## Verification discipline
 
-Act → screenshot → verify, **before** continuing. Every text field gets a
-`js()` readback; every click gets a screenshot confirming the visible result
-(dropdown opened, chip appeared, toggle flipped). Never assume an action
-worked because the call returned.
+Act → verify, **before** continuing. Every text field gets a `get value` /
+`get text` readback; every click gets a state check proving the visible
+result (dropdown opened, "Tagged topics (N)" incremented, `is checked`,
+screenshot). A command's "✓ Done" only means the call returned — never that
+the page did what you wanted.
 
 ## Failure policy
 
 - **Fail-stop, not fail-skip.** Any step that fails verification:
-  1. Save a screenshot to `.cache/failures/` (`mkdir -p .cache/failures`),
-     named `<file>-<step>.png`.
+  1. Save a screenshot to `.cache/failures/` (`mkdir -p .cache/failures`):
+     `agent-browser screenshot .cache/failures/<file>-<step>.png`
   2. `uv run --no-project "${CLAUDE_PLUGIN_ROOT}/scripts/manifest.py" mark "<file>" failed --error "<reason>"`
   3. **STOP the whole batch** and report. A mid-batch failure usually means
      UI drift or a session problem; continuing risks cascading damage.
@@ -277,17 +316,33 @@ worked because the call returned.
 - Re-runs are safe: only `approved` rows are considered; `scheduled` rows
   are never touched again.
 
-## Browser-harness gotchas (field-tested on this page)
+## Agent-browser gotchas (field-tested on this page)
 
-- `cdp()` takes params as **kwargs**, not a dict:
-  `cdp("DOM.querySelector", nodeId=n, selector="...")`.
-- `js()` expressions containing the keyword `return` silently evaluate to
-  `None` — use expression-style arrow functions / comma operators instead.
-- Screenshots are 2x device pixels; divide by 2 for `click_at_xy` CSS
-  coords. Better: get exact targets from `getBoundingClientRect()` via
-  `js()` instead of reading pixels off the image.
+- **Silent fallback browser.** Any command issued without a live session
+  auto-launches a fresh, logged-out browser. If a page that should be logged
+  in shows the Pinterest landing page, you may be in the wrong browser —
+  re-check how the session was started before blaming cookies.
+- **Refs go stale.** `@eN` refs are only valid for the most recent
+  `snapshot`. Re-snapshot after any click that changes the page before
+  reusing refs.
+- **"✓ Done" is not verification.** Clicks on dropdown options can silently
+  no-op when the option is outside the dropdown's visible scroll area (board
+  list, tag suggestions). Always verify the resulting state; scroll the
+  option into view and retry once on failure.
+- **Open dropdowns near the fold.** Scroll the trigger into view
+  (`scrollintoview`) before clicking it, and keep scroll+click+verify in one
+  `batch`.
+- `find text` matches substrings — pass `--exact` (e.g. "Barefoot Running"
+  also matches "Barefoot Running Shoes"). For options use
+  `find role option click --name "..." --exact`.
+- `eval` is expression-style; optional chaining (`?.`) and `??` work for
+  null-safe probes.
+- **Daemon wedge recovery:** repeated `✗ Failed to read: Resource
+  temporarily unavailable (os error 35)` means the daemon is stuck —
+  `pkill -f agent-browser-darwin`, remove
+  `~/.agent-browser/default.{sock,pid,stream}`, start again.
 - The page scrolls in an inner container — `window.scrollTo` does nothing;
-  use `element.scrollIntoView({block:"center"})`.
+  use `scrollintoview` / `element.scrollIntoView({block:"center"})`.
 - A hidden reCAPTCHA (`g-recaptcha-response`) textarea exists on the organic
   page. Human-paced interaction only; no rapid-fire automation.
 
@@ -295,15 +350,15 @@ worked because the call returned.
 
 | Field | Selector | Input method | Notes |
 |---|---|---|---|
-| Upload | `#storyboard-upload-input` | CDP `DOM.setFileInputFiles` (objectId variant) | input removed from DOM = upload started; mp4 < 200 MB |
-| Title | `#storyboard-selector-title` | click + `Input.insertText` | plain input, no maxlength attr — enforce ≤100 yourself |
-| Description | `div[contenteditable=true]` | click + `Input.insertText` | Draft.js editor; verify via `textContent`; enforce ≤800 |
-| Link | `#WebsiteField` | click + `Input.insertText` | `type=url` |
-| Board | "Choose a board" dropdown | click → board list (has search box) → click board name | shows "All boards" + Create board |
-| Tags | `#combobox-storyboard-interest-tags` | click + `insertText` → wait ~2 s → click `[role=option]` | suggestions are `[role=option]` (not leaf divs); counter "Tagged topics (N)"; chip with × appears |
-| Schedule toggle | `#pin-draft-switch-group` (checkbox) | click | label "Publish at a later date"; Publish button becomes "Schedule" |
-| Schedule date | `input[id^=pin-draft-schedule-date-field]` | click → select-all (keyDown `a` + `commands=["selectAll"]`) → `insertText` MM/DD/YYYY → Escape | calendar popup; 30-day window |
-| Schedule time | `input[id^=pin-draft-schedule-time-field]` | click → pick from dropdown (typing ignored) | 48 options, 30-min increments, 12-hour labels |
+| Upload | `#storyboard-upload-input` | `agent-browser upload` | input removed from DOM = upload started; mp4 < 200 MB |
+| Title | `#storyboard-selector-title` | `fill` + `get value` | plain input, no maxlength attr — enforce ≤100 yourself |
+| Description | `div[contenteditable=true]` | `fill` + `get text` | Draft.js editor; `fill` works directly; enforce ≤800 |
+| Link | `#WebsiteField` | `fill` + `get value` | `type=url` |
+| Board | button "Choose a board Open dropdown" (snapshot ref) | scrollintoview + click → `find text <board> click --exact` | shows "All boards" + Create board; verify button shows board name |
+| Tags | `#combobox-storyboard-interest-tags` | `fill` → wait ~2 s → `find role option click --name ... --exact` | suggestions are `[role=option]`; verify counter "Tagged topics (N)"; broaden query if empty |
+| Schedule toggle | `#pin-draft-switch-group` (checkbox) | `check` + `is checked` | label "Publish at a later date"; Publish button becomes "Schedule" |
+| Schedule date | `input[id^=pin-draft-schedule-date-field]` | `fill` MM/DD/YYYY → `press Escape` → `get value` | calendar popup; 30-day window |
+| Schedule time | `input[id^=pin-draft-schedule-time-field]` | click → `find text <label> click --exact` → `get value` | typing ignored; 48 options, 30-min increments, 12-hour labels |
 | AI disclosure | `input[id^=pin-draft-ai-disclosure]` | click if needed | "Mark as AI-Modified" |
-| ALT text | `#storyboardAltText` | expand "More options" → click + `Input.insertText` | placeholder "Describe your Pin's visual details"; verified working |
+| ALT text | `#storyboardAltText` | expand "More options" first → `fill` + `get value` | **not in DOM until expanded**; placeholder "Describe your Pin's visual details" |
 | Comments / products toggles | `#CommentSwitch`, `#stelaSwitch` | leave untouched | under "More options" |

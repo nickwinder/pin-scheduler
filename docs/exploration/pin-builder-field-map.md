@@ -1,4 +1,10 @@
-# Pin creation field map (explored 2026-06-11)
+# Pin creation field map (explored 2026-06-11; re-verified same day with agent-browser)
+
+All selectors and behaviors below were confirmed twice on 2026-06-11: first
+via raw CDP (browser-harness), then end-to-end with
+[agent-browser](https://agent-browser.dev) (upload, all fields, board, tag,
+toggle, date, time, draft delete). The playbook in
+`skills/pin-scheduler/SKILL.md` uses the agent-browser commands.
 
 ## Which flow to use — CRITICAL
 
@@ -21,9 +27,10 @@ All automation targets **pin-creation-tool**. Differences that matter:
 
 ## Upload (organic flow)
 
-- Method that works: **CDP `DOM.setFileInputFiles`** on `#storyboard-upload-input`
-  (use the `objectId` variant via `Runtime.evaluate` → `DOM.setFileInputFiles`).
-  No native picker, no AppleScript needed.
+- Method that works: set files on the hidden `#storyboard-upload-input` —
+  `agent-browser upload "#storyboard-upload-input" <file>` (Playwright
+  setInputFiles), or raw CDP `DOM.setFileInputFiles` (objectId variant via
+  `Runtime.evaluate`). No native picker, no AppleScript needed.
 - The input is removed from the DOM once the upload starts — that's the
   success signal; the video preview (with play button) renders when processing
   is done. Our 67 KB fixture processed in ~5 s.
@@ -78,18 +85,42 @@ the "Pin drafts (N)" rail.
   (Delete shows a "Delete your draft?" confirm dialog).
 - "Create new" button starts a fresh draft (equivalent to the left-rail "+").
 
-## Browser-harness gotchas (field-tested)
+## Page gotchas (client-agnostic, field-tested)
 
-- `cdp()` takes params as **kwargs**, not a dict: `cdp("DOM.querySelector", nodeId=n, selector="...")`.
-- `js()` expressions containing the keyword `return` silently evaluate to
-  `None` — use expression-style arrow functions / comma operators instead.
-- Screenshots are 2× device pixels; divide by 2 for `click_at_xy` CSS coords.
-  Get exact targets from `getBoundingClientRect()` via `js()` instead of
-  reading pixels off the image.
 - The page scrolls in an inner container — `window.scrollTo` does nothing;
-  use `element.scrollIntoView({block:"center"})`.
+  use `element.scrollIntoView({block:"center"})` / `scrollintoview`.
+- Dropdown option clicks can silently no-op when the option sits outside
+  the dropdown's visible scroll area (board list, tag suggestions). Always
+  verify the resulting state (board name shown, "Tagged topics (N)"
+  incremented); scroll the option into view and retry on failure.
+- `#storyboardAltText` is **not in the DOM** until "More options" is
+  expanded.
 - A hidden reCAPTCHA (`g-recaptcha-response`) textarea exists on the organic
   page. Human-paced interaction only; no rapid-fire automation.
+
+## Agent-browser gotchas (field-tested 2026-06-11)
+
+- **Connection:** attaching to a running macOS Chrome 144+ is gated by an
+  in-browser "Allow remote debugging?" consent popup per client. While the
+  attach is pending the daemon wedges (CLI reports `os error 35`), and
+  subsequent commands **silently auto-launch a fresh logged-out browser** —
+  it looks connected but isn't. Verify login state with a screenshot before
+  trusting any session.
+- Chrome profile *snapshots* (`--profile <profile-name>`) do not carry
+  logins on macOS: cookies are keychain-encrypted and Chrome for Testing
+  cannot decrypt them. Use a **persistent profile path**
+  (`--profile ~/.pin-scheduler-browser`) and log in once in the headed
+  window instead.
+- `@eN` refs are only valid for the most recent `snapshot` — re-snapshot
+  after page-changing clicks.
+- `find text` matches substrings; pass `--exact` ("Barefoot Running" also
+  matches "Barefoot Running Shoes"). For listbox options:
+  `find role option click --name "..." --exact`.
+- `fill` works directly on the Draft.js description editor and the date
+  field (no select-all/insertText dance needed); the time field still
+  requires picking from the dropdown.
+- Daemon wedge recovery: `pkill -f agent-browser-darwin`, delete
+  `~/.agent-browser/default.{sock,pid,stream}`, retry.
 
 ## Other observations
 
