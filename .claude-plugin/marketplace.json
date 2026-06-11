@@ -1,0 +1,14 @@
+{
+  "name": "pin-scheduler-marketplace",
+  "owner": {
+    "name": "Nick Winder"
+  },
+  "plugins": [
+    {
+      "name": "pin-scheduler",
+      "source": "./",
+      "description": "Batch-prepare Pinterest video pins as scheduled drafts: whisper transcription, AI titles/descriptions, and human-paced browser automation of the pin-creation-tool. Drafts only — you click Schedule.",
+      "version": "0.1.0"
+    }
+  ]
+}

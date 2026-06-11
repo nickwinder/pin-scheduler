@@ -1,0 +1,17 @@
+{
+  "name": "pin-scheduler",
+  "description": "Batch-prepare Pinterest video pins as scheduled drafts: whisper transcription, AI titles/descriptions, and human-paced browser automation of the pin-creation-tool. Drafts only — you click Schedule.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Nick Winder"
+  },
+  "keywords": [
+    "pinterest",
+    "scheduling",
+    "browser-automation",
+    "video-pins",
+    "content-workflow"
+  ],
+  "repository": "https://github.com/nickwinder/pin-scheduler",
+  "license": "MIT"
+}

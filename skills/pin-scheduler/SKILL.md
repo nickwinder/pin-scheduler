@@ -10,8 +10,17 @@ browser-harness. Two phases: **prep** (transcribe + generate copy into
 `manifest.csv` for review) and **post** (fill the pin form, set the schedule,
 leave it as a draft). Pinterest's own scheduler does the timed publishing.
 
-All commands run from the repo root. `manifest.csv` is the single source of
-truth; never schedule anything that isn't an `approved` row in it.
+## Paths
+
+- **Plugin scripts** live at `${CLAUDE_PLUGIN_ROOT}/scripts/`. If
+  `CLAUDE_PLUGIN_ROOT` is unset (running from a checkout of this repo), use
+  the repo root instead.
+- **State lives in the user's content directory** (the current working
+  directory): `config.yaml`, `manifest.csv`, `videos/inbox/`,
+  `videos/scheduled/`, `.cache/`. Run all commands from there.
+
+`manifest.csv` is the single source of truth; never schedule anything that
+isn't an `approved` row in it.
 
 ## Drafts-only policy (non-negotiable default)
 
@@ -31,8 +40,10 @@ Pinterest themselves.
 
 ## Setup (once)
 
+In the user's content directory:
+
 ```bash
-cp config.example.yaml config.yaml   # then edit: link, alt_text, tags, board, window
+cp "${CLAUDE_PLUGIN_ROOT}/config.example.yaml" config.yaml   # then edit: link, alt_text, tags, board, window
 mkdir -p videos/inbox videos/scheduled
 ```
 
@@ -46,32 +57,32 @@ mkdir -p videos/inbox videos/scheduled
 1. List videos in `videos/inbox/` whose basename is not already a `filename`
    in `manifest.csv`.
 2. For each new video:
-   - Transcribe: `scripts/transcribe.sh videos/inbox/<file>` (cached in
-     `.cache/transcripts/`; prints the transcript).
+   - Transcribe: `"${CLAUDE_PLUGIN_ROOT}/scripts/transcribe.sh" videos/inbox/<file>`
+     (cached in `.cache/transcripts/`; prints the transcript).
    - Generate, in-session, from filename + transcript:
      - **Title** ≤100 chars, leading keywords first.
      - **Description** ≤800 chars, natural sentences, keyword-rich, no
        hashtag spam.
      - Enforce the limits yourself — the UI has no counters.
-   - Append: `uv run python scripts/manifest.py add "<file>" "<title>" "<description>"`
+   - Append: `uv run --no-project "${CLAUDE_PLUGIN_ROOT}/scripts/manifest.py" add "<file>" "<title>" "<description>"`
 3. Tell the user to review `manifest.csv` and approve rows. On "approve all":
    for **each** row with status `draft`, run one invocation per row —
-   `uv run python scripts/manifest.py mark "<filename>" approved` — there is
-   no bulk subcommand.
+   `uv run --no-project "${CLAUDE_PLUGIN_ROOT}/scripts/manifest.py" mark "<filename>" approved`
+   — there is no bulk subcommand.
 
 ## Post phase ("schedule pins")
 
 1. Capacity check: read `queue_cap` from `config.yaml`, then run
-   `uv run python scripts/manifest.py capacity --cap <queue_cap>` (substitute
-   the value; default is 10). If 0: stop cleanly, report "queue full, N
-   approved pins remaining — run again later".
+   `uv run --no-project "${CLAUDE_PLUGIN_ROOT}/scripts/manifest.py" capacity --cap <queue_cap>`
+   (substitute the value; default is 10). If 0: stop cleanly, report "queue
+   full, N approved pins remaining — run again later".
 2. Take `N = min(capacity, number of approved rows)`.
-3. Get slots: `uv run python scripts/slots.py --count N` — prints one naive
-   local ISO datetime per line (e.g. `2026-06-12T09:00`).
+3. Get slots: `uv run --no-project "${CLAUDE_PLUGIN_ROOT}/scripts/slots.py" --count N`
+   — prints one naive local ISO datetime per line (e.g. `2026-06-12T09:00`).
 4. For each approved row + slot, run the per-pin playbook below. Only after
    the final verification screenshot:
    ```bash
-   uv run python scripts/manifest.py mark "<file>" scheduled --time "<slot-iso>"
+   uv run --no-project "${CLAUDE_PLUGIN_ROOT}/scripts/manifest.py" mark "<file>" scheduled --time "<slot-iso>"
    mv "videos/inbox/<file>" "videos/scheduled/<file>"
    ```
    `mark <file> scheduled` **requires** `--time` (it raises without it). Pass
@@ -256,7 +267,7 @@ worked because the call returned.
 - **Fail-stop, not fail-skip.** Any step that fails verification:
   1. Save a screenshot to `.cache/failures/` (`mkdir -p .cache/failures`),
      named `<file>-<step>.png`.
-  2. `uv run python scripts/manifest.py mark "<file>" failed --error "<reason>"`
+  2. `uv run --no-project "${CLAUDE_PLUGIN_ROOT}/scripts/manifest.py" mark "<file>" failed --error "<reason>"`
   3. **STOP the whole batch** and report. A mid-batch failure usually means
      UI drift or a session problem; continuing risks cascading damage.
 - **Exception:** video processing timeout (step 3) — mark that row `failed`,

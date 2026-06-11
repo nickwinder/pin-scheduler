@@ -1,7 +1,11 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml>=6"]
+# ///
 """Compute the next free posting slots from config.yaml and manifest.csv.
 
 CLI:
-    uv run python scripts/slots.py --count 5
+    uv run --no-project scripts/slots.py --count 5
 Prints one local ISO datetime per line.
 """
 import argparse

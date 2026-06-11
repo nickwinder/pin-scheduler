@@ -1,9 +1,9 @@
 """Read and update manifest.csv — the single source of truth for pin state.
 
 CLI:
-    uv run python scripts/manifest.py add <filename> <title> <description>
-    uv run python scripts/manifest.py mark <filename> <status> [--time ISO] [--error MSG]
-    uv run python scripts/manifest.py capacity
+    uv run --no-project scripts/manifest.py add <filename> <title> <description>
+    uv run --no-project scripts/manifest.py mark <filename> <status> [--time ISO] [--error MSG]
+    uv run --no-project scripts/manifest.py capacity [--cap N]
 """
 import argparse
 import csv

@@ -1,1 +1,1 @@
-@SKILL.md
+@skills/pin-scheduler/SKILL.md
