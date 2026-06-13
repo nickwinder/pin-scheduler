@@ -17,6 +17,16 @@ The organic flow the reader means lives at:
 (Reachable via header hamburger → Create content → Organic → "Create Pin".)
 All automation targets **pin-creation-tool**. Differences that matter:
 
+> **Account-cohort redirect (verified 2026-06-13).** Pinterest serves the
+> organic storyboard composer at **either** `/pin-creation-tool/` **or**
+> `/idea-pin-builder/`, redirecting one to the other depending on the account
+> — they are the **same editor** with the same `#storyboard-*` field map. On
+> this machine's business account, `/idea-pin-builder/` → `/pin-creation-tool/`;
+> a customer reported the reverse (`/pin-creation-tool/` → `/idea-pin-builder/`).
+> So the playbook must verify the **composer** (presence of
+> `#storyboard-upload-input`), never the URL string. `/pin-builder/` remains a
+> *different* composer (the ad flow above) — not the same as this redirect pair.
+
 | | pin-builder (ad flow) | pin-creation-tool (organic) |
 |---|---|---|
 | Video limit | mp4 < 2 GB | **mp4 < 200 MB** |
