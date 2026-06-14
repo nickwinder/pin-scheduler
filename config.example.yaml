@@ -12,3 +12,6 @@ interval_minutes: 60                   # spacing between pins (30 or 60)
 margin_minutes: 20                     # never schedule closer than this to now
 queue_cap: 10                          # Pinterest max queued pins — help-docs value, not yet verified empirically
 auto_schedule: false                   # true = click Schedule after filling (requires explicit in-session consent); false = leave as draft, you click Schedule in Pinterest
+                                       # NOTE: the pin-builder composer (accounts without ad access) has no draft mode,
+                                       # so it works ONLY with auto_schedule: true + in-session consent. The storyboard
+                                       # composer defaults to drafts-only (false).

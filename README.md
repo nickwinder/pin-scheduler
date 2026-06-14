@@ -5,13 +5,18 @@ fill the pin form by hand again. Drop videos into a folder, say **"prep
 pins"**, review a CSV of generated titles and descriptions, say **"schedule
 pins"** — and Claude drives a dedicated logged-in browser (via
 [agent-browser](https://agent-browser.dev)) through Pinterest's organic
-composer (`pinterest.com/pin-creation-tool/`): uploads each video, fills
+composer (`pinterest.com/pin-creation-tool/`, which some accounts serve at
+`pinterest.com/idea-pin-builder/` — same editor): uploads each video, fills
 title, description, link, ALT text, board, and tags, and sets "Publish at a
 later date" to the next free slot in your posting window.
 
-**It never publishes anything.** Every pin stops as a fully-prepared draft;
-you review and click **Schedule** in Pinterest yourself. Pinterest's native
-scheduler then does the timed publishing — no machine needs to stay awake.
+**By default it never publishes anything.** On the storyboard composer every
+pin stops as a fully-prepared draft; you review and click **Schedule** in
+Pinterest yourself. Pinterest's native scheduler then does the timed publishing
+— no machine needs to stay awake. (The exception: accounts whose composer is
+the standard **pin-builder** have no draft mode, so scheduling there requires
+`auto_schedule: true` and your explicit per-run consent — only then does the
+tool click Schedule for you. See `docs/exploration/standard-pin-builder.md`.)
 
 ## Quickstart
 
@@ -174,6 +179,11 @@ schedule and the review hurdle is real — make your own call.
 - `scripts/manifest.py` — CSV state machine (`draft → approved → scheduled`, `failed`)
 - `scripts/slots.py` — next-free-slot computation (unit-tested)
 - `scripts/transcribe.sh` — whisper wrapper with caching
+- `scripts/inspect-composer.sh` — dumps the live composer's field map as JSON
+  (run on a target account to verify selectors / stage pin-builder support)
 - `docs/exploration/pin-builder-field-map.md` — the empirically verified UI
   map (selectors, input methods, gotchas); the source of truth for the playbook
+- `docs/exploration/standard-pin-builder.md` — verified field map for the
+  standard `/pin-builder/` composer (the second composer variant) and its
+  no-draft constraint (auto_schedule-only)
 - `tests/` — `uv run pytest` (17 tests)
